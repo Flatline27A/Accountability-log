@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Personnel Status Board</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0a1420;
+    color: #e8edf2;
+    margin: 0;
+    padding: 32px;
+    min-height: 100vh;
+  }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 24px;
+    border-bottom: 2px solid #223140;
+    padding-bottom: 20px;
+  }
+  h1 {
+    font-size: 36px;
+    font-weight: 800;
+    margin: 0;
+    color: #f4f6f8;
+    letter-spacing: 0.02em;
+  }
+  .clock {
+    font-size: 22px;
+    color: #7fa8c9;
+    font-variant-numeric: tabular-nums;
+  }
+  .summary-row {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 28px;
+  }
+  .summary-card {
+    flex: 1;
+    background: #16232f;
+    border: 1px solid #223140;
+    border-radius: 14px;
+    padding: 20px 24px;
+    text-align: center;
+  }
+  .summary-number {
+    font-size: 48px;
+    font-weight: 800;
+    line-height: 1;
+  }
+  .summary-label {
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #9fb0bf;
+    margin-top: 8px;
+  }
+  .num-out { color: #e8a08c; }
+  .num-in { color: #8fd9a8; }
+  .board {
+    background: #16232f;
+    border: 1px solid #223140;
+    border-radius: 16px;
+    overflow: hidden;
+  }
+  .board-header {
+    display: grid;
+    grid-template-columns: 2fr 2fr 1.5fr 2fr 1.5fr 1fr;
+    gap: 16px;
+    padding: 16px 24px;
+    background: #1c2b3a;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #7fa8c9;
+    font-weight: 700;
+  }
+  .board-row {
+    display: grid;
+    grid-template-columns: 2fr 2fr 1.5fr 2fr 1.5fr 1fr;
+    gap: 16px;
+    padding: 18px 24px;
+    border-top: 1px solid #223140;
+    font-size: 20px;
+    align-items: center;
+  }
+  .board-row:nth-child(even) { background: rgba(255,255,255,0.02); }
+  .col-name { font-weight: 700; color: #f4f6f8; }
+  .col-dim { color: #9fb0bf; font-size: 17px; }
+  .status-pill {
+    display: inline-block;
+    padding: 4px 14px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .pill-out { background: #4a2a22; color: #e8a08c; }
+  .empty-board {
+    padding: 60px 24px;
+    text-align: center;
+    color: #6b7c8c;
+    font-size: 22px;
+  }
+  .footer-note {
+    margin-top: 20px;
+    color: #6b7c8c;
+    font-size: 13px;
+    text-align: center;
+  }
+  #global-error {
+    display: none;
+    background: #4a2a22;
+    color: #e8a08c;
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    margin-bottom: 16px;
+  }
+  @media (max-width: 900px) {
+    .board-header, .board-row { grid-template-columns: 1fr 1fr; }
+    .col-buddy, .col-time { display: none; }
+    h1 { font-size: 26px; }
+    .clock { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div id="global-error"></div>
+<div class="header">
+  <h1>Personnel Status Board</h1>
+  <div class="clock" id="clock"></div>
+</div>
+
+<div class="summary-row">
+  <div class="summary-card">
+    <div class="summary-number num-out" id="count-out">–</div>
+    <div class="summary-label">Currently Out</div>
+  </div>
+  <div class="summary-card">
+    <div class="summary-number num-in" id="count-total">–</div>
+    <div class="summary-label">Total Logged (25 Days)</div>
+  </div>
+</div>
+
+<div class="board">
+  <div class="board-header">
+    <div>Name</div>
+    <div class="col-buddy">Battle Buddy</div>
+    <div>Platoon</div>
+    <div>Location</div>
+    <div class="col-time">Time Out</div>
+    <div>Status</div>
+  </div>
+  <div id="board-body"></div>
+</div>
+
+<div class="footer-note">Auto-refreshes every 10 seconds · Last updated <span id="last-updated">–</span></div>
+
+<script>
+// ======= CONFIG =======
+// Paste the same Apps Script Web App URL used on the sign-out page:
+const SHEET_API_URL = 'https://script.google.com/macros/s/AKfycbzXXuZvqHqM1Te_tpmrMIDHy-vMeSMEOsaEx6ouAOnzg01-sL-MstANzccJZF3vuZSj0Q/exec';
+// =======================
+
+window.onerror = function(msg, src, line) {
+  const box = document.getElementById('global-error');
+  box.style.display = 'block';
+  box.textContent = 'Page error: ' + msg + ' (line ' + line + ')';
+  return false;
+};
+
+function fmtTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function updateClock() {
+  document.getElementById('clock').textContent = new Date().toLocaleString(undefined, {
+    weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit'
+  });
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str == null ? '' : str;
+  return div.innerHTML;
+}
+
+function checkConfigured() {
+  if (!SHEET_API_URL || SHEET_API_URL.indexOf('PASTE_YOUR') === 0) {
+    const box = document.getElementById('global-error');
+    box.style.display = 'block';
+    box.textContent = 'Setup needed: paste your Apps Script Web App URL into SHEET_API_URL near the top of the <script> tag in this file.';
+    return false;
+  }
+  return true;
+}
+
+async function loadBoard() {
+  if (!checkConfigured()) return;
+  try {
+    const res = await fetch(SHEET_API_URL + '?action=list');
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    render(data.entries || []);
+    document.getElementById('last-updated').textContent = new Date().toLocaleTimeString();
+  } catch (e) {
+    const box = document.getElementById('global-error');
+    box.style.display = 'block';
+    box.textContent = 'Could not load board: ' + e.message;
+  }
+}
+
+function render(entries) {
+  const active = entries.filter(e => !e.timeIn).sort((a, b) => new Date(a.timeOut) - new Date(b.timeOut));
+  document.getElementById('count-out').textContent = active.length;
+  document.getElementById('count-total').textContent = entries.length;
+
+  const body = document.getElementById('board-body');
+  if (active.length === 0) {
+    body.innerHTML = '<div class="empty-board">Everyone is currently signed in.</div>';
+    return;
+  }
+
+  body.innerHTML = active.map(e => `
+    <div class="board-row">
+      <div class="col-name">${escapeHtml(e.name)}</div>
+      <div class="col-dim col-buddy">${escapeHtml(e.buddy) || '—'}</div>
+      <div class="col-dim">${escapeHtml(e.platoon) || '—'}</div>
+      <div class="col-dim">${escapeHtml(e.location)}</div>
+      <div class="col-dim col-time">${fmtTime(e.timeOut)}</div>
+      <div><span class="status-pill pill-out">Out</span></div>
+    </div>
+  `).join('');
+}
+
+updateClock();
+setInterval(updateClock, 1000);
+loadBoard();
+setInterval(loadBoard, 10000);
+</script>
+</body>
+</html>
